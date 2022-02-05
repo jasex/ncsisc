@@ -4,9 +4,12 @@ pub mod kleptographic {
     pub use curv::BigInt;
     pub use openssl::hash::{Hasher, MessageDigest};
     pub use rand::thread_rng;
-    use rand::Rng;
+    use rand::{AsByteSliceMut, Rng};
     use serde::{Deserialize, Serialize};
     use sha3::{Digest, Keccak256};
+    use std::env;
+    use std::fs::File;
+    use std::io::Write;
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Param {
@@ -35,6 +38,28 @@ pub mod kleptographic {
                 private: private.clone(),
                 public: private * Point::generator(),
             }
+        }
+        pub fn save(&self) -> std::io::Result<()> {
+            let mut base_path = env::current_dir()?;
+            base_path.push("keys");
+            let mut path1 = base_path.clone();
+            path1.push("server_host_key");
+            let mut path2 = base_path.clone();
+            path2.push("server_host_key");
+            path2.set_extension("pub");
+
+            let private_key = self.private.to_bigint().to_bytes();
+            let mut public_key = self.public.to_bytes(false);
+
+            if let Ok(mut file) = File::create(path1.clone()) {
+                file.write(&private_key)?;
+            }
+
+            if let Ok(mut file) = File::create(path2.clone()) {
+                file.write(&public_key)?;
+            }
+
+            Ok(())
         }
     }
     impl Signature {
@@ -287,7 +312,7 @@ mod tests {
             user_keypair.clone(),
             attacker_keypair.clone(),
         )
-            .unwrap();
+        .unwrap();
         let temp = extract_users_private_key(
             message1.clone(),
             message2.clone(),
@@ -298,7 +323,7 @@ mod tests {
             attacker_keypair.public.clone(),
             user_keypair.public.clone(),
         )
-            .unwrap();
+        .unwrap();
         assert_eq!(temp.to_bigint(), user_keypair.private.to_bigint());
     }
     #[test]
@@ -323,7 +348,7 @@ mod tests {
             user_keypair.clone(),
             attacker_keypair.clone(),
         )
-            .unwrap();
+        .unwrap();
 
         let recover = extract_users_private_key_hash(
             hash1.clone().to_vec(),
@@ -334,7 +359,7 @@ mod tests {
             attacker_keypair.clone(),
             user_keypair.public.clone(),
         )
-            .unwrap();
+        .unwrap();
         assert_eq!(
             user_keypair.private.clone().to_bigint(),
             recover.to_bigint()
@@ -365,5 +390,25 @@ mod tests {
             keypair.public.clone(),
         );
         assert_eq!(out, Ok(()));
+    }
+    #[test]
+    fn test_save() {
+        use std::fs::File;
+        use std::io::prelude::*;
+        use std::io::BufReader;
+        let keypair = KeyPair::new(Scalar::random());
+        let out = keypair.save();
+        println!("{:?}", out);
+        let mut f1 = File::open("/home/zj/Documents/ncsisc/library/ncsisc/keys/server_host_key").unwrap();
+        let mut f2 = File::open("/home/zj/Documents/ncsisc/library/ncsisc/keys/server_host_key.pub").unwrap();
+        let mut reader1 = BufReader::new(f1);
+        let mut reader2 = BufReader::new(f2);
+        let mut buffer1 = Vec::new();
+        let mut buffer2 = Vec::new();
+        reader1.read_to_end(&mut buffer1);
+        reader2.read_to_end(&mut buffer2);
+        let check1:Scalar<Secp256k1> = Scalar::from_bytes(&buffer1).unwrap();
+        let check2 :Point<Secp256k1>= Point::from_bytes(&buffer2).unwrap();
+        assert_eq!((check1,check2),(keypair.private,keypair.public))
     }
 }

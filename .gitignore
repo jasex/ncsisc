@@ -1,3 +1,5 @@
 /target
 Cargo.lock
 .idea/
+keys/server_host_key
+keys/server_host_key.pub
