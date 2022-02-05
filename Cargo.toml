@@ -9,7 +9,7 @@ description = "A library for school projects"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rand = "*"
+rand = "0.6.5"
 curv-kzen = "0.8"
 openssl = "0.10"
 openssl-sys = "0.9"
