@@ -39,6 +39,10 @@ pub mod kleptographic {
                 public: private * Point::generator(),
             }
         }
+        pub fn fingerprint(&self) -> String {
+            let bytes = self.public.to_bytes(false);
+            base64::encode(&*bytes)
+        }
         pub fn save(&self) -> std::io::Result<()> {
             let mut base_path = env::current_dir()?;
             base_path.push("keys");
@@ -399,16 +403,24 @@ mod tests {
         let keypair = KeyPair::new(Scalar::random());
         let out = keypair.save();
         println!("{:?}", out);
-        let mut f1 = File::open("/home/zj/Documents/ncsisc/library/ncsisc/keys/server_host_key").unwrap();
-        let mut f2 = File::open("/home/zj/Documents/ncsisc/library/ncsisc/keys/server_host_key.pub").unwrap();
+        let mut f1 =
+            File::open("/home/zj/Documents/ncsisc/library/ncsisc/keys/server_host_key").unwrap();
+        let mut f2 =
+            File::open("/home/zj/Documents/ncsisc/library/ncsisc/keys/server_host_key.pub")
+                .unwrap();
         let mut reader1 = BufReader::new(f1);
         let mut reader2 = BufReader::new(f2);
         let mut buffer1 = Vec::new();
         let mut buffer2 = Vec::new();
         reader1.read_to_end(&mut buffer1);
         reader2.read_to_end(&mut buffer2);
-        let check1:Scalar<Secp256k1> = Scalar::from_bytes(&buffer1).unwrap();
-        let check2 :Point<Secp256k1>= Point::from_bytes(&buffer2).unwrap();
-        assert_eq!((check1,check2),(keypair.private,keypair.public))
+        let check1: Scalar<Secp256k1> = Scalar::from_bytes(&buffer1).unwrap();
+        let check2: Point<Secp256k1> = Point::from_bytes(&buffer2).unwrap();
+        assert_eq!((check1, check2), (keypair.private, keypair.public))
+    }
+    #[test]
+    fn test_fingerprint() {
+        let keypair = KeyPair::new(Scalar::random());
+        println!("{}", keypair.fingerprint());
     }
 }
