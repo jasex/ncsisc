@@ -5,13 +5,12 @@ pub mod kleptographic {
     pub use openssl::hash::{Hasher, MessageDigest};
     pub use rand::thread_rng;
     use rand::{AsByteSliceMut, Rng};
-    use serde::{Deserialize, Serialize};
     use sha3::{Digest, Keccak256};
     use std::env;
     use std::fs::File;
     use std::io::Write;
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug)]
     pub struct Param {
         a: Scalar<Secp256k1>,
         b: Scalar<Secp256k1>,
@@ -19,7 +18,7 @@ pub mod kleptographic {
         e: Scalar<Secp256k1>,
     }
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug)]
     pub struct Signature {
         pub r: Scalar<Secp256k1>,
         pub s: Scalar<Secp256k1>,
@@ -309,13 +308,11 @@ pub mod kleptographic {
 pub mod protocol {
     use crate::kleptographic::*;
     use curv::elliptic::curves::Scalar;
-    use serde::Deserialize;
-    use serde::Serialize;
     use sha3::digest::DynDigest;
     use std::io::{Read, Write};
     use std::os::unix::net::{UnixListener, UnixStream};
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug)]
     pub struct Packet {
         hash: Vec<u8>,
         sign: Signature,
