@@ -19,7 +19,7 @@ pub mod kleptographic {
         e: Scalar<Secp256k1>,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Signature {
         pub r: Scalar<Secp256k1>,
         pub s: Scalar<Secp256k1>,
@@ -83,6 +83,14 @@ pub mod kleptographic {
                 h: Scalar::random(),
                 e: Scalar::random(),
             }
+        }
+        pub fn from(
+            a: Scalar<Secp256k1>,
+            b: Scalar<Secp256k1>,
+            h: Scalar<Secp256k1>,
+            e: Scalar<Secp256k1>,
+        ) -> Self {
+            Param { a, b, h, e }
         }
     }
 
@@ -295,6 +303,79 @@ pub mod kleptographic {
             }
         }
         None
+    }
+}
+
+pub mod protocol {
+    use crate::kleptographic::*;
+    use curv::elliptic::curves::Scalar;
+    use serde::Deserialize;
+    use serde::Serialize;
+    use sha3::digest::DynDigest;
+    use std::io::{Read, Write};
+    use std::os::unix::net::{UnixListener, UnixStream};
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct Packet {
+        hash: Vec<u8>,
+        sign: Signature,
+    }
+    impl Packet {
+        pub fn from(hash: Vec<u8>, sign: Signature) -> Self {
+            Packet { hash, sign }
+        }
+    }
+
+    // fast hash function using Keccak256
+    pub fn fast_hash(data: &[u8]) -> Vec<u8> {
+        use sha3::{Digest, Keccak256};
+        let mut hasher = Keccak256::new();
+        Digest::update(&mut hasher, data);
+        Vec::from(hasher.finalize().as_slice())
+    }
+
+    // use hash to generate Param
+    pub fn generate_param(hash: Vec<u8>) -> Param {
+        use curv::elliptic::curves::Scalar;
+        let a = fast_hash(&hash);
+        let b = fast_hash(&a);
+        let h = fast_hash(&b);
+        let e = fast_hash(&h);
+        Param::from(
+            Scalar::<Secp256k1>::from_bytes(&a).unwrap(),
+            Scalar::<Secp256k1>::from_bytes(&b).unwrap(),
+            Scalar::<Secp256k1>::from_bytes(&h).unwrap(),
+            Scalar::<Secp256k1>::from_bytes(&e).unwrap(),
+        )
+    }
+
+    // send private key to socket. It will construct a transaction and send it
+    pub fn construct_transaction_and_send(
+        private_key: String,
+        stream: &mut UnixStream,
+    ) -> Result<usize, std::io::Error> {
+        let mut v = Vec::from(private_key.as_bytes());
+        // the first 0 stands for construct_transaction_and_send mode -> "use this private key construct a normal transaction and send it for me"
+        v.insert(0, 0);
+        stream.write(&v)
+    }
+
+    // read hash from stream, sign it and send it back to socket
+    pub fn sign_transaction_and_send(
+        private_key: String,
+        stream: &mut UnixStream,
+    ) -> Result<usize, ()> {
+        let mut buf: [u8; 32] = [0; 32];
+        stream.read_exact(&mut buf);
+        let mut hash = Vec::from(buf);
+        let private = BigInt::from_hex(&private_key).unwrap();
+        let keypair = KeyPair::new(Scalar::from_bigint(&private));
+
+        let sign = sign_hash(hash.clone(), keypair, Scalar::random());
+        if let Some(sign) = sign {
+            Packet::from(hash, sign);
+        }
+        Err(())
     }
 }
 #[cfg(test)]
