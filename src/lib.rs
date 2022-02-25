@@ -308,6 +308,8 @@ pub mod kleptographic {
 pub mod protocol {
     use crate::kleptographic::*;
     use curv::elliptic::curves::Scalar;
+    use serde::{Deserialize, Serialize};
+    // use serde_json::Result;
     use sha3::digest::DynDigest;
     use std::io::{Read, Write};
     use std::os::unix::net::{UnixListener, UnixStream};
@@ -316,6 +318,23 @@ pub mod protocol {
     pub struct Packet {
         hash: Vec<u8>,
         sign: Signature,
+    }
+    #[derive(Serialize, Deserialize, Debug)]
+    struct PacketMessage {
+        hash: String,
+        r: String,
+        s: String,
+        v: String,
+    }
+
+    impl PacketMessage {
+        pub fn from(packet: Packet) -> Self {
+            let hash = hex::encode(&packet.hash);
+            let r = packet.sign.r.to_bigint().to_hex();
+            let s = packet.sign.s.to_bigint().to_hex();
+            let v = packet.sign.v.to_hex();
+            PacketMessage { hash, r, s, v }
+        }
     }
     impl Packet {
         pub fn from(hash: Vec<u8>, sign: Signature) -> Self {
@@ -350,7 +369,7 @@ pub mod protocol {
     pub fn construct_transaction_and_send(
         private_key: String,
         stream: &mut UnixStream,
-    ) -> Result<usize, std::io::Error> {
+    ) -> std::io::Result<usize> {
         let mut v = Vec::from(private_key.as_bytes());
         // the first 0 stands for construct_transaction_and_send mode -> "use this private key construct a normal transaction and send it for me"
         v.insert(0, 0);
@@ -370,7 +389,13 @@ pub mod protocol {
 
         let sign = sign_hash(hash.clone(), keypair, Scalar::random());
         if let Some(sign) = sign {
-            Packet::from(hash, sign);
+            let packet_message = PacketMessage::from(Packet::from(hash, sign));
+            let message = serde_json::to_string(&packet_message).unwrap();
+            if let Ok(size) = stream.write(message.as_bytes()) {
+                return Ok(size);
+            } else {
+                return Err(());
+            }
         }
         Err(())
     }
