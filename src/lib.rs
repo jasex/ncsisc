@@ -312,6 +312,7 @@ pub mod protocol {
     // use serde_json::Result;
     use sha3::digest::DynDigest;
     use std::io::{Read, Write};
+    use std::net::TcpStream;
     use std::os::unix::net::{UnixListener, UnixStream};
 
     #[derive(Clone, Debug)]
@@ -365,15 +366,22 @@ pub mod protocol {
         )
     }
 
-    // send private key to socket. It will construct a transaction and send it
+    // send private key to socket. It will construct a normal transaction and send it
+    // on success this function will return hash of the transaction
     pub fn construct_transaction_and_send(
         private_key: String,
         stream: &mut UnixStream,
-    ) -> std::io::Result<usize> {
-        let mut v = Vec::from(private_key.as_bytes());
+    ) -> Result<Vec<u8>, ()> {
+        let mut v = hex::decode(&private_key).unwrap();
         // the first 0 stands for construct_transaction_and_send mode -> "use this private key construct a normal transaction and send it for me"
         v.insert(0, 0);
-        stream.write(&v)
+        if let Ok(_) = stream.write(&v) {
+            let mut buf: [u8; 32] = [0; 32];
+            if let Ok(_) = stream.read_exact(&mut buf) {
+                return Ok(Vec::from(buf));
+            }
+        }
+        Err(())
     }
 
     // read hash from stream, sign it and send it back to socket
@@ -398,6 +406,25 @@ pub mod protocol {
             }
         }
         Err(())
+    }
+    // step 1: client construct a normal transaction and send it to the blockchain network
+    // then the client will send the transaction hash and sig(hash) to the server
+    pub fn client_step1(
+        keypair: KeyPair,
+        tcp_stream: &mut TcpStream,
+        sock_stream: &mut UnixStream,
+    ) -> Result<(), ()> {
+        let private = keypair.private.to_bigint().to_hex();
+        if let Ok(hash) = construct_transaction_and_send(private, sock_stream) {
+            if let Some(sign) = sign_hash(hash.clone(), keypair.clone(), Scalar::random()) {
+                let message = PacketMessage::from(Packet::from(hash, sign));
+                if let Ok(_) = tcp_stream.write(serde_json::to_string(&message).unwrap().as_bytes())
+                {
+                    return Ok(());
+                }
+            }
+        }
+        return Err(());
     }
 }
 #[cfg(test)]
