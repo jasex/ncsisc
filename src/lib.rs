@@ -426,12 +426,30 @@ pub mod protocol {
         }
         return Err(());
     }
+    pub fn client_step2(
+        keypair: KeyPair,
+        tcp_stream: &mut TcpStream,
+        sock_stream: &mut UnixStream,
+    ) {
+    }
+    pub fn server_step1() {}
 }
 #[cfg(test)]
 mod tests {
     use crate::kleptographic::*;
     use sha3::{Digest, Keccak256};
 
+    #[test]
+    fn test_keypair() {
+        let private = Scalar::random();
+        let keypair = KeyPair::new(private.clone());
+        println!("{:?}", keypair.public);
+        let one: Scalar<Secp256k1> = Scalar::from(1);
+        let G = Point::generator() * one.clone();
+        println!("{:?}", G);
+        let G = G * one;
+        println!("{:?}", G);
+    }
     #[test]
     fn test_extract_users_private_key() {
         let message1 = String::from("first message");
