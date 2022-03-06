@@ -5,7 +5,7 @@ pub mod kleptographic {
     pub use openssl::hash::{Hasher, MessageDigest};
     pub use rand::thread_rng;
     use rand::{AsByteSliceMut, Rng};
-    use serde::{Serialize, Serializer};
+    use serde::{Deserialize, Serialize, Serializer};
     use sha3::{Digest, Keccak256};
     use std::env;
     use std::fs::File;
@@ -19,7 +19,7 @@ pub mod kleptographic {
         e: Scalar<Secp256k1>,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Signature {
         pub r: Scalar<Secp256k1>,
         pub s: Scalar<Secp256k1>,
@@ -312,15 +312,17 @@ pub mod protocol {
     use serde::{Deserialize, Serialize};
     // use serde_json::Result;
     use sha3::digest::DynDigest;
+    use std::io::{BufRead, BufReader};
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::os::unix::net::{UnixListener, UnixStream};
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Packet {
         hash: Vec<u8>,
         sign: Signature,
     }
+
     #[derive(Serialize, Deserialize, Debug)]
     struct PacketMessage {
         hash: String,
@@ -385,7 +387,10 @@ pub mod protocol {
         Err(())
     }
 
-    // read hash from stream, sign it and send it back to socket
+    // read hash from stream, sign it and send the (hash, signature) back to socket
+    //
+    // NEED TO NOTICE: only the signature sent back is needed
+    //
     pub fn sign_transaction_and_send(
         private_key: String,
         stream: &mut UnixStream,
@@ -437,6 +442,9 @@ pub mod protocol {
 
     // step 1: client construct a normal transaction and send it to the blockchain network
     // then the client will send the transaction hash and sig(hash) to the server
+    //
+    // struct of message: hash+sig(hash)
+    //
     pub fn client_step1(
         keypair: KeyPair,
         tcp_stream: &mut TcpStream,
@@ -460,23 +468,37 @@ pub mod protocol {
         sock_stream: &mut UnixStream,
     ) {
     }
-    pub fn server_step1() {}
+    // server step 1: get hash+sig(hash) from tcp_socket; pass hash to sock_socket; get public key from sock_socket; verify sig
+    // TODO: untested
+    pub fn server_step1(sock_stream: &mut UnixStream, tcp_stream: &mut TcpStream) -> bool {
+        let tcp_reader = tcp_stream.try_clone().unwrap();
+        let sock_reader = sock_stream.try_clone().unwrap();
+        let mut tcp_reader = BufReader::new(tcp_reader);
+        let mut sock_reader = BufReader::new(sock_reader);
+
+        let mut message = String::new();
+        // read hash & signature from tcp stream
+        tcp_reader.read_line(&mut message).unwrap();
+        let packet: Packet = serde_json::from_str(&message).unwrap();
+
+        // write the hash into unix stream
+        write!(sock_stream, "{}", hex::encode(&packet.hash));
+        message.clear();
+        // read public bytes from sock stream
+        sock_reader.read_line(&mut message).unwrap();
+
+        let public = hex_to_public(message);
+        if let Ok(_) = verify_hash(packet.hash, packet.sign, public) {
+            return true;
+        }
+        false
+    }
 }
 #[cfg(test)]
 mod tests {
     use crate::kleptographic::*;
     use sha3::{Digest, Keccak256};
 
-    #[test]
-    fn test_keypair() {
-        for i in 0..65535 {
-            let keypair = KeyPair::new(Scalar::random());
-            let str = hex::encode(&keypair.public.to_bytes(false).to_vec());
-            if str.len() != 130 {
-                println!("{}", str.len());
-            }
-        }
-    }
     #[test]
     fn test_extract_users_private_key() {
         let message1 = String::from("first message");
