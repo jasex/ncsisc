@@ -202,6 +202,7 @@ pub mod kleptographic {
         let k2: Scalar<Secp256k1> = Scalar::from_bytes(hasher.finalize().as_ref()).unwrap();
         return k2;
     }
+
     pub fn verify(message: String, sign: Signature, public: Point<Secp256k1>) -> Result<(), ()> {
         let mut hasher = Hasher::new(MessageDigest::sha256()).unwrap();
         hasher.update(message.as_bytes()).unwrap();
@@ -392,13 +393,29 @@ pub mod protocol {
 
     // send private key to socket. It will construct a normal transaction and send it
     // on success this function will return hash of the transaction
-    pub fn construct_transaction_and_send(
+    pub fn construct_client_transaction_and_send(
         private_key: String,
         stream: &mut UnixStream,
     ) -> Result<Vec<u8>, ()> {
         let mut v = hex::decode(&private_key).unwrap();
         // the first 0 stands for construct_transaction_and_send mode -> "use this private key construct a normal transaction and send it for me"
         v.insert(0, 0);
+        if let Ok(_) = stream.write(&v) {
+            let mut buf: [u8; 32] = [0; 32];
+            if let Ok(_) = stream.read_exact(&mut buf) {
+                return Ok(Vec::from(buf));
+            }
+        }
+        Err(())
+    }
+    // send private key to socket. It will construct a special server transaction and return the unsigned hash
+    pub fn construct_server_transaction_and_read_unsigned_hash(
+        private_key: String,
+        stream: &mut UnixStream,
+    ) -> Result<Vec<u8>, ()> {
+        let mut v = hex::decode(&private_key).unwrap();
+        // the first 1 stands for construct_special_transaction_dont_sign_and_send_back_the_hash -> "use this private key construct a special transaction and return the unsigned hash to me"
+        v.insert(0, 1);
         if let Ok(_) = stream.write(&v) {
             let mut buf: [u8; 32] = [0; 32];
             if let Ok(_) = stream.read_exact(&mut buf) {
@@ -472,7 +489,7 @@ pub mod protocol {
         sock_stream: &mut UnixStream,
     ) -> Result<(), ()> {
         let private = keypair.private.to_bigint().to_hex();
-        if let Ok(hash) = construct_transaction_and_send(private, sock_stream) {
+        if let Ok(hash) = construct_client_transaction_and_send(private, sock_stream) {
             if let Some(sign) = sign_hash(hash.clone(), keypair.clone(), Scalar::random()) {
                 let message = PacketMessage::from(Packet::from(hash, sign));
                 if let Ok(_) = tcp_stream.write(serde_json::to_string(&message).unwrap().as_bytes())
@@ -489,9 +506,15 @@ pub mod protocol {
         sock_stream: &mut UnixStream,
     ) {
     }
-    // server step 1: get hash+sig(hash) from tcp_socket; pass hash to sock_socket; get public key from sock_socket; verify sig
+    // server step 1: get hash+sig(hash) from tcp_socket; pass hash to sock_socket; get public key from sock_socket;
+    // after excuting this function, the server will get the public key and param
     // TODO: untested
-    pub fn server_step1(sock_stream: &mut UnixStream, tcp_stream: &mut TcpStream) -> bool {
+    pub fn server_step1(
+        sock_stream: &mut UnixStream,
+        tcp_stream: &mut TcpStream,
+        param: &mut Param,
+        public: &mut Point<Secp256k1>,
+    ) {
         let tcp_reader = tcp_stream.try_clone().unwrap();
         let sock_reader = sock_stream.try_clone().unwrap();
         let mut tcp_reader = BufReader::new(tcp_reader);
@@ -508,11 +531,11 @@ pub mod protocol {
         // read public bytes from sock stream
         sock_reader.read_line(&mut message).unwrap();
 
-        let public = hex_to_public(message);
-        if let Ok(_) = verify_hash(packet.hash, packet.sign, public) {
-            return true;
-        }
-        false
+        // get param from hash
+        *param = generate_param(packet.hash.clone());
+
+        // get public key from transaction
+        *public = hex_to_public(message);
     }
 }
 #[cfg(test)]
