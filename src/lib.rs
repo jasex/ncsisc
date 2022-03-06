@@ -5,6 +5,7 @@ pub mod kleptographic {
     pub use openssl::hash::{Hasher, MessageDigest};
     pub use rand::thread_rng;
     use rand::{AsByteSliceMut, Rng};
+    use serde::{Serialize, Serializer};
     use sha3::{Digest, Keccak256};
     use std::env;
     use std::fs::File;
@@ -407,6 +408,18 @@ pub mod protocol {
         }
         Err(())
     }
+
+    // convert hex string to public key
+    pub fn hex_to_public(hex: String) -> Point<Secp256k1> {
+        Point::from_bytes(&hex::decode(hex).unwrap()).unwrap()
+    }
+
+    // convert public key to hex string
+    pub fn public_to_hex(public: Point<Secp256k1>) -> String {
+        let v = public.to_bytes(false).to_vec();
+        hex::encode(&v).to_string()
+    }
+
     // step 1: client construct a normal transaction and send it to the blockchain network
     // then the client will send the transaction hash and sig(hash) to the server
     pub fn client_step1(
@@ -447,8 +460,10 @@ mod tests {
         let one: Scalar<Secp256k1> = Scalar::from(1);
         let G = Point::generator() * one.clone();
         println!("{:?}", G);
-        let G = G * one;
-        println!("{:?}", G);
+        let temp = G.to_bytes(false);
+        let p: Point<Secp256k1> =
+            Point::from_bytes(&*hex::decode(hex::encode(temp.to_vec())).unwrap()).unwrap();
+        println!("{:?}", p);
     }
     #[test]
     fn test_extract_users_private_key() {
