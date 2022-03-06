@@ -155,6 +155,7 @@ pub mod kleptographic {
 
         return Some([sign1, sign2]);
     }
+
     pub fn mal_sign_hash(
         hash1: Vec<u8>,
         hash2: Vec<u8>,
@@ -181,6 +182,26 @@ pub mod kleptographic {
         return Some([sign1, sign2]);
     }
 
+    pub fn calculate_k(
+        param: Param,
+        k1: Scalar<Secp256k1>,
+        public: Point<Secp256k1>,
+    ) -> Scalar<Secp256k1> {
+        let mut rng = thread_rng();
+        let u: Scalar<Secp256k1> = Scalar::from(rng.gen::<u16>() % 2);
+        let j: Scalar<Secp256k1> = Scalar::from(rng.gen::<u16>() % 2);
+        let z = k1.clone() * param.a.clone() * Point::generator()
+            + param.b.clone() * k1.clone() * public.clone()
+            + j.clone() * param.h.clone() * Point::generator()
+            + u.clone() * param.e.clone() * public.clone();
+
+        let zx = z.x_coord().unwrap();
+
+        let mut hasher = Keccak256::new();
+        Digest::update(&mut hasher, &zx.to_bytes());
+        let k2: Scalar<Secp256k1> = Scalar::from_bytes(hasher.finalize().as_ref()).unwrap();
+        return k2;
+    }
     pub fn verify(message: String, sign: Signature, public: Point<Secp256k1>) -> Result<(), ()> {
         let mut hasher = Hasher::new(MessageDigest::sha256()).unwrap();
         hasher.update(message.as_bytes()).unwrap();
