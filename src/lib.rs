@@ -420,6 +420,21 @@ pub mod protocol {
         hex::encode(&v).to_string()
     }
 
+    // read public key from socket
+    pub fn read_public_from_socket(stream: &mut UnixStream) -> Point<Secp256k1> {
+        let mut buf: [u8; 130] = [0; 130];
+        stream.read_exact(&mut buf);
+        Point::from_bytes(&*hex::decode(&buf).unwrap()).unwrap()
+    }
+
+    // write public key to socket
+    pub fn write_public_to_to_socket(
+        public: Point<Secp256k1>,
+        stream: &mut UnixStream,
+    ) -> std::io::Result<usize> {
+        stream.write(hex::encode(&public.to_bytes(false).to_vec()).as_bytes())
+    }
+
     // step 1: client construct a normal transaction and send it to the blockchain network
     // then the client will send the transaction hash and sig(hash) to the server
     pub fn client_step1(
@@ -454,16 +469,13 @@ mod tests {
 
     #[test]
     fn test_keypair() {
-        let private = Scalar::random();
-        let keypair = KeyPair::new(private.clone());
-        println!("{:?}", keypair.public);
-        let one: Scalar<Secp256k1> = Scalar::from(1);
-        let G = Point::generator() * one.clone();
-        println!("{:?}", G);
-        let temp = G.to_bytes(false);
-        let p: Point<Secp256k1> =
-            Point::from_bytes(&*hex::decode(hex::encode(temp.to_vec())).unwrap()).unwrap();
-        println!("{:?}", p);
+        for i in 0..65535 {
+            let keypair = KeyPair::new(Scalar::random());
+            let str = hex::encode(&keypair.public.to_bytes(false).to_vec());
+            if str.len() != 130 {
+                println!("{}", str.len());
+            }
+        }
     }
     #[test]
     fn test_extract_users_private_key() {
