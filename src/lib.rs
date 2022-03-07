@@ -346,7 +346,7 @@ pub mod protocol {
     }
 
     #[derive(Serialize, Deserialize, Debug)]
-    struct PacketMessage {
+    pub struct PacketMessage {
         hash: String,
         r: String,
         s: String,
@@ -523,16 +523,17 @@ pub mod protocol {
         let mut message = String::new();
         // read hash & signature from tcp stream
         tcp_reader.read_line(&mut message).unwrap();
-        let packet: Packet = serde_json::from_str(&message).unwrap();
+        // all message format should be PacketMessage
+        let packet_message: PacketMessage = serde_json::from_str(&message).unwrap();
 
         // write the hash into unix stream
-        write!(sock_stream, "{}", hex::encode(&packet.hash));
+        write!(sock_stream, "{}", &packet_message.hash);
         message.clear();
         // read public bytes from sock stream
         sock_reader.read_line(&mut message).unwrap();
 
         // get param from hash
-        *param = generate_param(packet.hash.clone());
+        *param = generate_param(hex::decode(packet_message.hash.clone()).unwrap());
 
         // get public key from transaction
         *public = hex_to_public(message);
@@ -541,8 +542,20 @@ pub mod protocol {
 #[cfg(test)]
 mod tests {
     use crate::kleptographic::*;
+    use crate::protocol::Packet;
+    use crate::protocol::PacketMessage;
     use sha3::{Digest, Keccak256};
 
+    #[test]
+    fn test_struct() {
+        let hash = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        let sign = Signature::new();
+        let packet = Packet::from(hash, sign);
+        let s = serde_json::to_string(&packet).unwrap();
+        println!("{}", s);
+        let packet_message = PacketMessage::from(packet);
+        println!("{}", serde_json::to_string(&packet_message).unwrap());
+    }
     #[test]
     fn test_extract_users_private_key() {
         let message1 = String::from("first message");
