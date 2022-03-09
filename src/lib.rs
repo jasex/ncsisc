@@ -332,6 +332,7 @@ pub mod protocol {
     use crate::kleptographic::*;
     use curv::elliptic::curves::Scalar;
     use serde::{Deserialize, Serialize};
+    use std::fs::read;
     // use serde_json::Result;
     use sha3::digest::DynDigest;
     use std::io::{BufRead, BufReader};
@@ -452,6 +453,46 @@ pub mod protocol {
         Err(())
     }
 
+    // value: transfer number in Drip (10^18 Drips = 1 CFX)
+    pub fn transfer(
+        private_key: String,
+        address: String,
+        value: u64,
+        stream: &mut UnixStream,
+    ) -> Result<String, String> {
+        let mut buffer = hex::decode(&private_key).unwrap();
+        // the first number 2 stands for transfer mode
+        buffer.insert(0, 2);
+        // add value to message buffer
+        let bytes: [u8; 8] = value.to_be_bytes();
+        buffer.extend_from_slice(&bytes);
+        // add address to message buffer
+        buffer.extend_from_slice(address.as_bytes());
+
+        if let Ok(_) = stream.write(&buffer) {
+            let reader = stream.try_clone().unwrap();
+            let mut reader = BufReader::new(reader);
+            let mut hash = String::new();
+            if let Ok(_) = reader.read_line(&mut hash) {
+                // judage whether returned string is hash
+                if hash.len()
+                    == hash
+                        .chars()
+                        .filter(|&c| (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))
+                        .collect::<String>()
+                        .len()
+                {
+                    return Ok(hash);
+                } else {
+                    return Err(hash);
+                }
+            } else {
+                return Err("Unable to read from UnixStream".to_string());
+            }
+        } else {
+            return Err("Unable to write to UnixStream".to_string());
+        }
+    }
     // convert hex string to public key
     pub fn hex_to_public(hex: String) -> Point<Secp256k1> {
         Point::from_bytes(&hex::decode(hex).unwrap()).unwrap()
@@ -478,6 +519,7 @@ pub mod protocol {
         stream.write(hex::encode(&public.to_bytes(false).to_vec()).as_bytes())
     }
 
+    pub fn register() {}
     // // step 1: client construct a normal transaction and send it to the blockchain network
     // // then the client will send the transaction hash and sig(hash) to the server
     // //
