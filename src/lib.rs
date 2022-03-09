@@ -334,6 +334,8 @@ pub mod protocol {
     use serde::{Deserialize, Serialize};
     use std::fs::read;
     // use serde_json::Result;
+    pub use rand::thread_rng;
+    use rand::{AsByteSliceMut, Rng};
     use sha3::digest::DynDigest;
     use std::io::{BufRead, BufReader};
     use std::io::{Read, Write};
@@ -519,7 +521,24 @@ pub mod protocol {
         stream.write(hex::encode(&public.to_bytes(false).to_vec()).as_bytes())
     }
 
-    pub fn register() {}
+    // range stands for the range of the available value; range[0] is lower limit, range[1] is upper limit
+    pub fn register(
+        private: String,
+        address: String,
+        stream: &mut UnixStream,
+        range: [u64; 2],
+    ) -> Result<String, ()> {
+        let mut rng = thread_rng();
+        let number = rng.gen::<u64>();
+        let value = range[0] + (number % (range[1] - range[0]));
+        match transfer(private, address, value, stream) {
+            Ok(hash) => return Ok(hash),
+            Err(msg) => {
+                eprintln!("{}", msg);
+                return Err(());
+            }
+        }
+    }
     // // step 1: client construct a normal transaction and send it to the blockchain network
     // // then the client will send the transaction hash and sig(hash) to the server
     // //
