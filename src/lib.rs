@@ -478,72 +478,73 @@ pub mod protocol {
         stream.write(hex::encode(&public.to_bytes(false).to_vec()).as_bytes())
     }
 
-    // step 1: client construct a normal transaction and send it to the blockchain network
-    // then the client will send the transaction hash and sig(hash) to the server
+    // // step 1: client construct a normal transaction and send it to the blockchain network
+    // // then the client will send the transaction hash and sig(hash) to the server
+    // //
+    // // struct of message: hash+sig(hash)
+    // //
+    // pub fn client_step1(
+    //     keypair: KeyPair,
+    //     tcp_stream: &mut TcpStream,
+    //     sock_stream: &mut UnixStream,
+    // ) -> Result<(), ()> {
+    //     let private = keypair.private.to_bigint().to_hex();
+    //     if let Ok(hash) = construct_client_transaction_and_send(private, sock_stream) {
+    //         if let Some(sign) = sign_hash(hash.clone(), keypair.clone(), Scalar::random()) {
+    //             let message = PacketMessage::from(Packet::from(hash, sign));
+    //             if let Ok(_) = tcp_stream.write(serde_json::to_string(&message).unwrap().as_bytes())
+    //             {
+    //                 return Ok(());
+    //             }
+    //         }
+    //     }
+    //     return Err(());
+    // }
+    // pub fn client_step2(
+    //     keypair: KeyPair,
+    //     tcp_stream: &mut TcpStream,
+    //     sock_stream: &mut UnixStream,
+    // ) {
+    // }
     //
-    // struct of message: hash+sig(hash)
+    // // server step 1: get hash+sig(hash) from tcp_socket; pass hash to sock_socket; get public key from sock_socket;
+    // // after excuting this function, the server will get the public key and param
+    // // TODO: untested
+    // pub fn server_step1(
+    //     sock_stream: &mut UnixStream,
+    //     tcp_stream: &mut TcpStream,
+    //     param: &mut Param,
+    //     public: &mut Point<Secp256k1>,
+    // ) {
+    //     let tcp_reader = tcp_stream.try_clone().unwrap();
+    //     let sock_reader = sock_stream.try_clone().unwrap();
+    //     let mut tcp_reader = BufReader::new(tcp_reader);
+    //     let mut sock_reader = BufReader::new(sock_reader);
     //
-    pub fn client_step1(
-        keypair: KeyPair,
-        tcp_stream: &mut TcpStream,
-        sock_stream: &mut UnixStream,
-    ) -> Result<(), ()> {
-        let private = keypair.private.to_bigint().to_hex();
-        if let Ok(hash) = construct_client_transaction_and_send(private, sock_stream) {
-            if let Some(sign) = sign_hash(hash.clone(), keypair.clone(), Scalar::random()) {
-                let message = PacketMessage::from(Packet::from(hash, sign));
-                if let Ok(_) = tcp_stream.write(serde_json::to_string(&message).unwrap().as_bytes())
-                {
-                    return Ok(());
-                }
-            }
-        }
-        return Err(());
-    }
-    pub fn client_step2(
-        keypair: KeyPair,
-        tcp_stream: &mut TcpStream,
-        sock_stream: &mut UnixStream,
-    ) {
-    }
-    // server step 1: get hash+sig(hash) from tcp_socket; pass hash to sock_socket; get public key from sock_socket;
-    // after excuting this function, the server will get the public key and param
-    // TODO: untested
-    pub fn server_step1(
-        sock_stream: &mut UnixStream,
-        tcp_stream: &mut TcpStream,
-        param: &mut Param,
-        public: &mut Point<Secp256k1>,
-    ) {
-        let tcp_reader = tcp_stream.try_clone().unwrap();
-        let sock_reader = sock_stream.try_clone().unwrap();
-        let mut tcp_reader = BufReader::new(tcp_reader);
-        let mut sock_reader = BufReader::new(sock_reader);
-
-        let mut message = String::new();
-        // read hash & signature from tcp stream
-        tcp_reader.read_line(&mut message).unwrap();
-        // all message format should be PacketMessage
-        let packet_message: PacketMessage = serde_json::from_str(&message).unwrap();
-
-        // write the hash into unix stream
-        write!(sock_stream, "{}", &packet_message.hash);
-        message.clear();
-        // read public bytes from sock stream
-        sock_reader.read_line(&mut message).unwrap();
-
-        // get param from hash
-        *param = generate_param(hex::decode(packet_message.hash.clone()).unwrap());
-
-        // get public key from transaction
-        *public = hex_to_public(message);
-    }
+    //     let mut message = String::new();
+    //     // read hash & signature from tcp stream
+    //     tcp_reader.read_line(&mut message).unwrap();
+    //     // all message format should be PacketMessage
+    //     let packet_message: PacketMessage = serde_json::from_str(&message).unwrap();
+    //
+    //     // write the hash into unix stream
+    //     write!(sock_stream, "{}", &packet_message.hash);
+    //     message.clear();
+    //     // read public bytes from sock stream
+    //     sock_reader.read_line(&mut message).unwrap();
+    //
+    //     // get param from hash
+    //     *param = generate_param(hex::decode(packet_message.hash.clone()).unwrap());
+    //
+    //     // get public key from transaction
+    //     *public = hex_to_public(message);
+    // }
 }
 #[cfg(test)]
 mod tests {
     use crate::kleptographic::*;
-    use crate::protocol::Packet;
     use crate::protocol::PacketMessage;
+    use crate::protocol::{public_to_hex, Packet};
     use sha3::{Digest, Keccak256};
 
     #[test]
@@ -551,10 +552,12 @@ mod tests {
         let hash = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
         let sign = Signature::new();
         let packet = Packet::from(hash, sign);
-        let s = serde_json::to_string(&packet).unwrap();
-        println!("{}", s);
         let packet_message = PacketMessage::from(packet);
         println!("{}", serde_json::to_string(&packet_message).unwrap());
+        let G: Point<Secp256k1> = Point::generator() * Scalar::from(1);
+        println!("{}", public_to_hex(G));
+        let keypair = KeyPair::new(Scalar::random());
+        println!("{}", public_to_hex(keypair.public));
     }
     #[test]
     fn test_extract_users_private_key() {
