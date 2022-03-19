@@ -341,6 +341,7 @@ pub mod protocol {
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::os::unix::net::{UnixListener, UnixStream};
+    use std::io::BufWriter;
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Packet {
@@ -405,6 +406,27 @@ pub mod protocol {
         let v = public.to_bytes(false).to_vec();
         hex::encode(&v).to_string()
     }
+
+    // client send (ck2.public + random)
+    pub fn client_step1(public:Point<Secp256k1>, stream: &mut TcpStream) -> std::io::Result<()> {
+        let mut bytes = public.to_bytes(false).to_vec();
+        let random_bytes = rand::thread_rng().gen::<[u8;32]>();
+        bytes.extend_from_slice(&random_bytes);
+        let mut writer = BufWriter::new(stream.try_clone().unwrap());
+        writer.write(&bytes).unwrap();
+        writer.flush()
+    }
+
+    // server return (sk2.public + sig(sk2.public + random))
+    pub fn server_step1(){
+
+    }
+
+    // server send (hash1, sig1, hash2, sig2)
+    pub fn server_step2(){
+
+    }
+
 }
 #[cfg(test)]
 mod tests {
@@ -412,6 +434,7 @@ mod tests {
     use crate::protocol::PacketMessage;
     use crate::protocol::{public_to_hex, Packet};
     use sha3::{Digest, Keccak256};
+    use sha3::digest::DynDigest;
 
     #[test]
     fn test_struct() {
@@ -545,5 +568,73 @@ mod tests {
     fn test_fingerprint() {
         let keypair = KeyPair::new(Scalar::random());
         println!("{}", keypair.fingerprint());
+    }
+    #[test]
+    fn test_new_time(){
+        let mut hasher = Keccak256::new();
+
+        let message1 = String::from("hello");
+        let message2 = String::from("hello, again");
+        let message3 = String::from("good bye");
+
+        let param = Param::new();
+        let user_keypair = KeyPair::new(Scalar::random());
+        let attacker_keypair = KeyPair::new(Scalar::random());
+        Digest::update(&mut hasher, message1.as_bytes());
+        let hash1 = hasher.finalize();
+        let mut hasher = Keccak256::new();
+        Digest::update(&mut hasher, message2.as_bytes());
+        let hash2 = hasher.finalize();
+        let mut hasher = Keccak256::new();
+        Digest::update(&mut hasher, message3.as_bytes());
+        let hash3 = hasher.finalize();
+
+        for i in 0..255{
+            let sign = sign_hash(hash3.clone().to_vec(),user_keypair.clone(),Scalar::random()).unwrap();
+            verify_hash(hash3.clone().to_vec(),sign,user_keypair.public.clone());
+
+            let [sign1, sign2] = mal_sign_hash(
+                hash1.clone().to_vec(),
+                hash2.clone().to_vec(),
+                param.clone(),
+                user_keypair.clone(),
+                attacker_keypair.clone(),
+            )
+                .unwrap();
+            verify_hash(hash1.clone().to_vec(),sign1.clone(),user_keypair.public.clone());
+            verify_hash(hash2.clone().to_vec(),sign2.clone(),user_keypair.public.clone());
+
+            let recover = extract_users_private_key_hash(
+                hash1.clone().to_vec(),
+                hash2.clone().to_vec(),
+                param.clone(),
+                sign1,
+                sign2,
+                attacker_keypair.clone(),
+                user_keypair.public.clone(),
+            )
+                .unwrap();
+        }
+    }
+    #[test]
+    fn test_old_time(){
+        let message1 = "hello";
+        let message2 = "hello, again";
+        let mut hasher = Keccak256::new();
+        let param = Param::new();
+        let user_keypair = KeyPair::new(Scalar::random());
+        let attacker_keypair = KeyPair::new(Scalar::random());
+        Digest::update(&mut hasher, message1.as_bytes());
+        let hash1 = hasher.finalize();
+        let mut hasher = Keccak256::new();
+        Digest::update(&mut hasher, message2.as_bytes());
+        let hash2 = hasher.finalize();
+
+        for i in 0..255{
+            let sign1 = sign_hash(hash1.clone().to_vec(),user_keypair.clone(),Scalar::random()).unwrap();
+            let sign2 = sign_hash(hash2.clone().to_vec(),user_keypair.clone(),Scalar::random()).unwrap();
+            verify_hash(hash1.clone().to_vec(),sign1,user_keypair.public.clone());
+            verify_hash(hash1.clone().to_vec(),sign2,user_keypair.public.clone());
+        }
     }
 }
