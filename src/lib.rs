@@ -161,7 +161,7 @@ pub mod kleptographic {
         hash2: Vec<u8>,
         param: Param,
         user_key_pair: KeyPair,
-        attacker_key_pair: KeyPair,
+        attacker_public: Point<Secp256k1>,
     ) -> Option<[Signature; 2]> {
         let k1: Scalar<Secp256k1> = Scalar::random();
         let sign1 = sign_hash(hash1.clone(), user_key_pair.clone(), k1.clone()).unwrap();
@@ -170,9 +170,9 @@ pub mod kleptographic {
         let u: Scalar<Secp256k1> = Scalar::from(rng.gen::<u16>() % 2);
         let j: Scalar<Secp256k1> = Scalar::from(rng.gen::<u16>() % 2);
         let z = k1.clone() * param.a.clone() * Point::generator()
-            + param.b.clone() * k1.clone() * attacker_key_pair.public.clone()
+            + param.b.clone() * k1.clone() * attacker_public.clone()
             + j.clone() * param.h.clone() * Point::generator()
-            + u.clone() * param.e.clone() * attacker_key_pair.public.clone();
+            + u.clone() * param.e.clone() * attacker_public.clone();
         let zx = z.x_coord().unwrap();
 
         let mut hasher = Keccak256::new();
@@ -334,14 +334,16 @@ pub mod protocol {
     use serde::{Deserialize, Serialize};
     use std::fs::read;
     // use serde_json::Result;
+    use libsm::sm4::{Cipher, Mode};
     pub use rand::thread_rng;
+    use rand::RngCore;
     use rand::{AsByteSliceMut, Rng};
     use sha3::digest::DynDigest;
+    use std::io::BufWriter;
     use std::io::{BufRead, BufReader};
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::os::unix::net::{UnixListener, UnixStream};
-    use std::io::BufWriter;
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Packet {
@@ -395,7 +397,6 @@ pub mod protocol {
         )
     }
 
-
     // convert hex string to public key
     pub fn hex_to_public(hex: String) -> Point<Secp256k1> {
         Point::from_bytes(&hex::decode(hex).unwrap()).unwrap()
@@ -408,9 +409,9 @@ pub mod protocol {
     }
 
     // client send (ck2.public + random)
-    pub fn client_step1(public:Point<Secp256k1>, stream: &mut TcpStream) -> std::io::Result<()> {
+    pub fn client_step1(public: Point<Secp256k1>, stream: &mut TcpStream) -> std::io::Result<()> {
         let mut bytes = public.to_bytes(false).to_vec();
-        let random_bytes = rand::thread_rng().gen::<[u8;32]>();
+        let random_bytes = rand::thread_rng().gen::<[u8; 32]>();
         bytes.extend_from_slice(&random_bytes);
         let mut writer = BufWriter::new(stream.try_clone().unwrap());
         writer.write(&bytes).unwrap();
@@ -418,23 +419,93 @@ pub mod protocol {
     }
 
     // server return (sk2.public + sig(sk2.public + random))
-    pub fn server_step1(){
+    // sk1: const
+    // sk2: dyn
+    pub fn server_step1(
+        stream: &mut TcpStream,
+        sk1: KeyPair,
+        sk2: KeyPair,
+        random: [u8; 32],
+    ) -> std::io::Result<()> {
+        // bytes = sk2.public
+        let mut bytes = sk2.public.to_bytes(false).to_vec();
+        // sign_data = sk2.public+random
+        let mut sign_data = bytes.clone();
+        sign_data.extend_from_slice(&random);
+        // sign_string = sig(sk2.public+random)
+        let sign = sign_hash(fast_hash(&sign_data), sk1, Scalar::random()).unwrap();
+        let sign_string = serde_json::to_string(&sign).unwrap();
 
+        let mut writer = BufWriter::new(stream.try_clone().unwrap());
+        writer.write(&bytes).unwrap();
+        writer.write(sign_string.as_bytes()).unwrap();
+        writer.flush()
     }
 
     // server send (hash1, sig1, hash2, sig2)
-    pub fn server_step2(){
+    // sign json string end with 92, 125
+    pub fn server_step2(
+        param: Param,
+        stream: &mut TcpStream,
+        sk2: KeyPair,
+        ck2: KeyPair,
+    ) -> std::io::Result<()> {
+        let mut rng = rand::thread_rng();
+        let mut hash1: [u8; 32] = [0; 32];
+        let mut hash2: [u8; 32] = [0; 32];
+        rng.fill_bytes(&mut hash1[..]);
+        rng.fill_bytes(&mut hash2[..]);
 
+        let mut buffer = Vec::new();
+        buffer.extend_from_slice(&hash1);
+        buffer.extend_from_slice(&hash2);
+
+        let [sign1, sign2] = mal_sign_hash(
+            Vec::from(hash1),
+            Vec::from(hash2),
+            param,
+            sk2,
+            ck2.public.clone(),
+        )
+        .unwrap();
+        buffer.extend_from_slice(serde_json::to_string(&sign1).unwrap().as_bytes());
+        buffer.extend_from_slice(serde_json::to_string(&sign2).unwrap().as_bytes());
+
+        let mut writer = BufWriter::new(stream.try_clone().unwrap());
+        writer.write(&buffer).unwrap();
+        writer.flush()
     }
 
+    pub fn rand_block() -> [u8; 16] {
+        let mut rng = rand::thread_rng();
+        let mut block: [u8; 16] = [0; 16];
+        rng.fill_bytes(&mut block[..]);
+        block
+    }
+
+    // encrypt message using sm4
+    pub fn encrypt(key: &[u8; 16], iv: &[u8; 16], plain_text: &[u8]) -> Vec<u8> {
+        let cipher = Cipher::new(key, Mode::Cfb);
+
+        // Encryption
+        cipher.encrypt(plain_text, iv)
+    }
+
+    // decrypt cipher using sm4
+    pub fn decrypt(key: &[u8; 16], iv: &[u8; 16], cipher_text: &[u8]) -> Vec<u8> {
+        let cipher = Cipher::new(key, Mode::Cfb);
+        // Decryption
+        cipher.decrypt(&cipher_text[..], iv)
+    }
 }
 #[cfg(test)]
 mod tests {
     use crate::kleptographic::*;
-    use crate::protocol::PacketMessage;
+    use crate::protocol::{fast_hash, PacketMessage};
     use crate::protocol::{public_to_hex, Packet};
-    use sha3::{Digest, Keccak256};
+    use rand::RngCore;
     use sha3::digest::DynDigest;
+    use sha3::{Digest, Keccak256};
 
     #[test]
     fn test_struct() {
@@ -496,7 +567,7 @@ mod tests {
             hash2.clone().to_vec(),
             param.clone(),
             user_keypair.clone(),
-            attacker_keypair.clone(),
+            attacker_keypair.public.clone(),
         )
         .unwrap();
 
@@ -570,7 +641,7 @@ mod tests {
         println!("{}", keypair.fingerprint());
     }
     #[test]
-    fn test_new_time(){
+    fn test_new_time() {
         let mut hasher = Keccak256::new();
 
         let message1 = String::from("hello");
@@ -589,20 +660,33 @@ mod tests {
         Digest::update(&mut hasher, message3.as_bytes());
         let hash3 = hasher.finalize();
 
-        for i in 0..255{
-            let sign = sign_hash(hash3.clone().to_vec(),user_keypair.clone(),Scalar::random()).unwrap();
-            verify_hash(hash3.clone().to_vec(),sign,user_keypair.public.clone());
+        for i in 0..255 {
+            let sign = sign_hash(
+                hash3.clone().to_vec(),
+                user_keypair.clone(),
+                Scalar::random(),
+            )
+            .unwrap();
+            verify_hash(hash3.clone().to_vec(), sign, user_keypair.public.clone());
 
             let [sign1, sign2] = mal_sign_hash(
                 hash1.clone().to_vec(),
                 hash2.clone().to_vec(),
                 param.clone(),
                 user_keypair.clone(),
-                attacker_keypair.clone(),
+                attacker_keypair.public.clone(),
             )
-                .unwrap();
-            verify_hash(hash1.clone().to_vec(),sign1.clone(),user_keypair.public.clone());
-            verify_hash(hash2.clone().to_vec(),sign2.clone(),user_keypair.public.clone());
+            .unwrap();
+            verify_hash(
+                hash1.clone().to_vec(),
+                sign1.clone(),
+                user_keypair.public.clone(),
+            );
+            verify_hash(
+                hash2.clone().to_vec(),
+                sign2.clone(),
+                user_keypair.public.clone(),
+            );
 
             let recover = extract_users_private_key_hash(
                 hash1.clone().to_vec(),
@@ -613,11 +697,11 @@ mod tests {
                 attacker_keypair.clone(),
                 user_keypair.public.clone(),
             )
-                .unwrap();
+            .unwrap();
         }
     }
     #[test]
-    fn test_old_time(){
+    fn test_old_time() {
         let message1 = "hello";
         let message2 = "hello, again";
         let mut hasher = Keccak256::new();
@@ -630,11 +714,38 @@ mod tests {
         Digest::update(&mut hasher, message2.as_bytes());
         let hash2 = hasher.finalize();
 
-        for i in 0..255{
-            let sign1 = sign_hash(hash1.clone().to_vec(),user_keypair.clone(),Scalar::random()).unwrap();
-            let sign2 = sign_hash(hash2.clone().to_vec(),user_keypair.clone(),Scalar::random()).unwrap();
-            verify_hash(hash1.clone().to_vec(),sign1,user_keypair.public.clone());
-            verify_hash(hash1.clone().to_vec(),sign2,user_keypair.public.clone());
+        for i in 0..255 {
+            let sign1 = sign_hash(
+                hash1.clone().to_vec(),
+                user_keypair.clone(),
+                Scalar::random(),
+            )
+            .unwrap();
+            let sign2 = sign_hash(
+                hash2.clone().to_vec(),
+                user_keypair.clone(),
+                Scalar::random(),
+            )
+            .unwrap();
+            verify_hash(hash1.clone().to_vec(), sign1, user_keypair.public.clone());
+            verify_hash(hash1.clone().to_vec(), sign2, user_keypair.public.clone());
         }
+    }
+
+    use libsm::sm4::{Cipher, Mode};
+
+    fn rand_block() -> [u8; 16] {
+        let mut rng = rand::thread_rng();
+        let mut block: [u8; 16] = [0; 16];
+        rng.fill_bytes(&mut block[..]);
+        block
+    }
+    #[test]
+    fn test_sign_string() {
+        let hash = fast_hash(&rand_block());
+        let keypair = KeyPair::new(Scalar::random());
+        let sign = sign_hash(Vec::from(hash), keypair, Scalar::random()).unwrap();
+        println!("{}", serde_json::to_string(&sign).unwrap());
+        println!("{:?}", serde_json::to_string(&sign).unwrap().as_bytes());
     }
 }
