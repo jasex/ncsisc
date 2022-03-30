@@ -20,3 +20,4 @@ base64 = "0.13.0"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 libsm = "0.4.1"
+bstr = "0.2.17"
