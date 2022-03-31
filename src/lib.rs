@@ -357,6 +357,7 @@ pub mod protocol {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Kle {
+        pub public: Point<Secp256k1>,
         pub hash1: Vec<u8>,
         pub hash2: Vec<u8>,
         pub sign1: Signature,
@@ -364,8 +365,15 @@ pub mod protocol {
     }
 
     impl Kle {
-        pub fn from(hash1: Vec<u8>, hash2: Vec<u8>, sign1: Signature, sign2: Signature) -> Self {
+        pub fn from(
+            public: Point<Secp256k1>,
+            hash1: Vec<u8>,
+            hash2: Vec<u8>,
+            sign1: Signature,
+            sign2: Signature,
+        ) -> Self {
             Kle {
+                public,
                 hash1,
                 hash2,
                 sign1,
@@ -455,7 +463,7 @@ pub mod protocol {
             public.clone(),
         )
         .unwrap();
-        let kle = Kle::from(hash1, hash2, sign1, sign2);
+        let kle = Kle::from(session_keypair.public.clone(), hash1, hash2, sign1, sign2);
         let kle_string = serde_json::to_string(&kle).unwrap();
         let mut bytes_to_be_hash: Vec<u8> = Vec::from(kle_string.as_bytes());
         bytes_to_be_hash.extend_from_slice(identity_a.as_bytes());
@@ -797,7 +805,7 @@ mod tests {
             keypair2.public.clone(),
         )
         .unwrap();
-        let kle = Kle::from(hash1, hash2, sign1.clone(), sign2);
+        let kle = Kle::from(keypair1.public.clone(), hash1, hash2, sign1.clone(), sign2);
         let mut string = serde_json::to_string(&kle).unwrap();
         string.push_str(&serde_json::to_string(&sign1).unwrap());
         println!("{}", string);
