@@ -357,10 +357,10 @@ pub mod protocol {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Kle {
-        hash1: Vec<u8>,
-        hash2: Vec<u8>,
-        sign1: Signature,
-        sign2: Signature,
+        pub hash1: Vec<u8>,
+        pub hash2: Vec<u8>,
+        pub sign1: Signature,
+        pub sign2: Signature,
     }
 
     impl Kle {
