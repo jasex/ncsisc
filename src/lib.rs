@@ -489,7 +489,7 @@ pub mod protocol {
     // function or client to recover message from server
     pub fn client_recover1(stream: &mut TcpStream) -> Vec<Vec<u8>> {
         use bstr::ByteSlice;
-        let mut buffer: [u8; 1024] = [0; 1024];
+        let mut buffer: [u8; 4096] = [0; 4096];
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         println!(
             "Client read {} bytes on step1",
