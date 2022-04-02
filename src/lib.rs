@@ -418,6 +418,7 @@ pub mod protocol {
         bytes.extend_from_slice(&*public.to_bytes(false));
         let mut writer = BufWriter::new(stream.try_clone().unwrap());
         writer.write(&bytes).unwrap();
+        println!("client_step1: {:?}", bytes);
         writer.flush()
     }
 
@@ -435,6 +436,7 @@ pub mod protocol {
             .into_iter()
             .filter(|&byte| byte != 0)
             .collect();
+        println!("server recover 1: {:?}", buffer);
         let pattern: [u8; 1] = [61];
         let mut result: Vec<Vec<u8>> = buffer.split_str(&pattern).map(|x| x.to_vec()).collect();
         let public_string = result.pop().unwrap();
@@ -480,6 +482,7 @@ pub mod protocol {
         bytes_to_send.extend_from_slice(serde_json::to_string(&sign).unwrap().as_bytes());
         let mut writer = BufWriter::new(stream.try_clone().unwrap());
         writer.write(&bytes_to_send);
+        println!("server step 1: {:?}", bytes_to_send);
         writer.flush()
     }
 
@@ -497,6 +500,7 @@ pub mod protocol {
             .into_iter()
             .filter(|&byte| byte != 0)
             .collect();
+        println!("client recover 1: {:?}", buffer);
         let pattern: Vec<u8> = vec![125, 123];
         let mut result: Vec<Vec<u8>> = buffer.split_str(&pattern).map(|x| x.to_vec()).collect();
 
@@ -530,6 +534,10 @@ pub mod protocol {
 
         let mut writer = BufWriter::new(stream.try_clone().unwrap());
         writer.write(serde_json::to_string(&sign).unwrap().as_bytes());
+        println!(
+            "client step 2: {:?}",
+            serde_json::to_string(&sign).unwrap().as_bytes()
+        );
         writer.flush()
     }
 
@@ -541,6 +549,7 @@ pub mod protocol {
             "Server read {} bytes on step1",
             reader.read(&mut buffer).unwrap()
         );
+        println!("server_recover 2: {:?}", buffer);
         buffer
             .to_vec()
             .into_iter()
