@@ -583,6 +583,13 @@ pub mod protocol {
         // Decryption
         cipher.decrypt(&cipher_text[..], iv)
     }
+    pub fn pass_to_communication(stream: &mut TcpStream,key: [u8;16],plain_text: String){
+        let mut buffer: [u8; 1024] = [0; 1024];
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut writer= BufWriter::new(stream.try_clone().unwrap());
+        writer.write(&encrypt(&key, &key, plain_text.as_bytes()));
+        writer.flush();
+    }
 }
 #[cfg(test)]
 mod tests {
