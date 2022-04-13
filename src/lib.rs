@@ -418,7 +418,8 @@ pub mod protocol {
         bytes.extend_from_slice(&*public.to_bytes(false));
         let mut writer = BufWriter::new(stream.try_clone().unwrap());
         writer.write(&bytes).unwrap();
-        println!("client_step1: {:?}", bytes);
+        let temp_string = hex::encode(bytes.clone());
+        println!("client_step1: {:?}", temp_string);
         writer.flush()
     }
 
@@ -436,7 +437,8 @@ pub mod protocol {
             .into_iter()
             .filter(|&byte| byte != 0)
             .collect();
-        println!("server recover 1: {:?}", buffer);
+        let temp_string = hex::encode(buffer.clone());
+        println!("server recover 1: {:?}", temp_string);
         let pattern: [u8; 1] = [61];
         let mut result: Vec<Vec<u8>> = buffer.split_str(&pattern).map(|x| x.to_vec()).collect();
         let public_string = result.pop().unwrap();
@@ -482,7 +484,8 @@ pub mod protocol {
         bytes_to_send.extend_from_slice(serde_json::to_string(&sign).unwrap().as_bytes());
         let mut writer = BufWriter::new(stream.try_clone().unwrap());
         writer.write(&bytes_to_send);
-        println!("server step 1: {:?}", bytes_to_send);
+        let temp_string = hex::encode(bytes_to_be_hash.clone());
+        println!("server step 1: {:?}", temp_string);
         writer.flush()
     }
 
@@ -500,7 +503,8 @@ pub mod protocol {
             .into_iter()
             .filter(|&byte| byte != 0)
             .collect();
-        println!("client recover 1: {:?}", buffer);
+        let temp_string = hex::encode(buffer.clone());
+        println!("client recover 1: {:?}", temp_string);
         let pattern: Vec<u8> = vec![125, 123];
         let mut result: Vec<Vec<u8>> = buffer.split_str(&pattern).map(|x| x.to_vec()).collect();
 
@@ -536,7 +540,7 @@ pub mod protocol {
         writer.write(serde_json::to_string(&sign).unwrap().as_bytes());
         println!(
             "client step 2: {:?}",
-            serde_json::to_string(&sign).unwrap().as_bytes()
+            hex::encode(serde_json::to_string(&sign).unwrap().as_bytes())
         );
         writer.flush()
     }
@@ -549,7 +553,8 @@ pub mod protocol {
             "Server read {} bytes on step1",
             reader.read(&mut buffer).unwrap()
         );
-        println!("server_recover 2: {:?}", buffer);
+        let temp_string = hex::encode(buffer.clone());
+        println!("server_recover 2: {:?}", temp_string);
         buffer
             .to_vec()
             .into_iter()
@@ -615,6 +620,8 @@ mod tests {
         .unwrap();
         assert_eq!(temp.to_bigint(), user_keypair.private.to_bigint());
     }
+
+    // test whether we can extract private key correctly
     #[test]
     fn test_extract_users_private_key_hash() {
         let mut hasher = Keccak256::new();
@@ -649,6 +656,8 @@ mod tests {
             user_keypair.public.clone(),
         )
         .unwrap();
+        println!("Original user private key: {:?}",user_keypair.private.clone().to_bigint());
+        println!("Recovered user private key: {:?}",recover.to_bigint());
         assert_eq!(
             user_keypair.private.clone().to_bigint(),
             recover.to_bigint()
@@ -665,6 +674,7 @@ mod tests {
             Ok(())
         );
     }
+    // test sign/verify function
     #[test]
     fn sign_and_verify_hash() {
         let message1 = String::from("i'm first message");
